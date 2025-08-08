@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="utf-8">
-  <!-- ページ全体ズームを禁止してチャートのピンチ操作を有効化 -->
+  <!-- ページ全体ズームを禁止してチャートピンチ操作を有効化 -->
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
   <title>TwistCore Monitor</title>
   <style>
@@ -32,6 +32,7 @@
     };
     // ▲ ここまで ▲
 
+    // Firebase初期化
     const app = initializeApp(firebaseConfig);
     const db  = getDatabase(app);
 
@@ -39,8 +40,13 @@
     const N = 50;
     const coreRef = query(ref(db, "twistcore_data"), limitToLast(N));
 
+    // 通知許可（ページ読み込み時）
+    if (Notification.permission !== "granted") {
+      Notification.requestPermission();
+    }
+
     const ctx = document.getElementById("coreChart").getContext("2d");
-    const state = { labels: [], values: [] };
+    const state = { labels: [], values: [], signals: [] };
 
     const chart = new Chart(ctx, {
       type: "line",
@@ -97,17 +103,34 @@
         for (const key of Object.keys(data)) {
           const row = data[key];
           if (!row || typeof row.core === "undefined" || !row.timestamp) continue;
-          rows.push({ ts: row.timestamp, core: Number(row.core) });
+          rows.push({ ts: row.timestamp, core: Number(row.core), signal: row.signal || false });
         }
         rows.sort((a,b) => (a.ts > b.ts ? 1 : -1));
 
         state.labels.length = 0;
         state.values.length = 0;
+        state.signals.length = 0;
+
         for (const r of rows) {
           state.labels.push(r.ts);
           state.values.push(r.core);
+          state.signals.push(r.signal);
         }
         chart.update();
+
+        // 最新データで通知
+        if (rows.length > 0) {
+          const latest = rows[rows.length - 1];
+          if (latest.signal) {
+            if (Notification.permission === "granted") {
+              new Notification("シグナル発生！", {
+                body: `${latest.timestamp} にシグナルあり`,
+                icon: "https://upload.wikimedia.org/wikipedia/commons/thumb/3/3a/Circle-icons-rocket.svg/1024px-Circle-icons-rocket.svg.png"
+              });
+            }
+          }
+        }
+
         document.getElementById("meta").textContent =
           `点数: ${rows.length} / 最終: ${rows.length ? rows[rows.length-1].ts : "-"}`;
       } else {
